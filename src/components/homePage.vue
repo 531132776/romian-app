@@ -4,8 +4,10 @@
             <van-icon name="wap-nav" slot="right" />
     </van-nav-bar>-->
         <div class="centerBox">
-            <van-notice-bar v-if="!connectType" class="notice_bar" :scrollable="false" left-icon="info-o"
-                background="rgba(255,229,229,.5)" color="#FF3320">设备未连接，请点击重试</van-notice-bar>
+            <!-- <van-notice-bar v-if="!connectType" class="notice_bar" :scrollable="false" left-icon="info-o"
+                background="rgba(255,229,229,.5)" color="#FF3320">
+                设备未连接，请点击重试
+            </van-notice-bar> -->
             <div class="index_img">
                 <!-- 主图 -->
                 <img src="./../assets/img/index_img.png" alt />
@@ -92,6 +94,9 @@ export default {
             tier: false,
             versionNumber: "",
             getCurrentRegisteredDevice:{},
+            deviceId:'',
+            android:"",
+            ios:''
         };
     },
     computed: {
@@ -125,6 +130,17 @@ export default {
         // if (nums === 1) {
         //   this.tier = true;
         // }
+        //获取手机系统
+        window.hilink.getSystemInfoSync('getSystemInfoSyncReq');
+        window.getSystemInfoSyncReq = (res) =>{
+            console.log(JSON.parse(res),'系统识别')
+            let obj = JSON.parse(res);
+            if(obj.platform == 'Android'){
+                this.android = obj.platform
+            }else{
+                this.ios = obj.platform
+            }
+        }
     },
     
     methods: {
@@ -172,7 +188,7 @@ export default {
             window.getBleStateRe = (res) =>{
                 console.log(res,'蓝牙状态');
                 let _status = JSON.parse(res)
-                if(_status.errCode == 0){
+                if(_status.available == false){
                     if(this.isiOS){
                         Dialog.confirm({
                             title: '蓝牙',
@@ -210,20 +226,88 @@ export default {
             window.getCurrentRegisteredDeviceReq = (res) =>{
                 let _registered = JSON.parse(res);
                 console.log(_registered,'已注册的设备回调');
-                let _deviceId = _registered.deviceId;
+                // let _deviceId = _registered.deviceId;
+                this.$set(this,'deviceId',_registered.deviceId)
+                console.log(this.deviceId,'_dev')
             }
         },
         //监听寻找到新设备的事件
         getWatchBle(){
             window.hilink.onBluetoothDeviceFound('onBluetoothDeviceFoundReq');
             window.onBluetoothDeviceFoundReq = (res) =>{
-                console.log('寻找到新设备');
+                // console.log(res,'寻找到新设备');
+                let _sechaBle = JSON.parse(res);
+                // console.log(_sechaBle)
+                let _deviceId = this.deviceId;
+                if(this.android){
+                    _sechaBle.map(v => {
+                        // console.log(v,'匹配')
+                        if(v.localName == this.deviceId){
+                            console.log('匹配成功');
+                            window.hilink.stopBluetoothDevicesDiscovery();
+                            console.log((v.deviceId).toLowerCase(),'mac')
+                            window.hilink.onBLEConnectionStateChange('onBLEConnectionStateChangeReq');
+                            window.onBLEConnectionStateChangeReq = (res) =>{
+                                console.log(res,'连接成功');
+                                window.hilink.onBLEServicesDiscovered('onBLEServicesDiscoveredResult');
+                                window.onBLEServicesDiscoveredResult = (res) =>{
+                                    console.log(res,'服务查询完成');
+                                    //通知低功耗蓝牙设备的特征值的值，通过onBLECharacteristicValueChange返回值
+                                    let serviceId = '0000ffb0-0000-10000-8000-00805f9b34fb';
+                                    let characteristicId = '0000ffb1-0000-1000-8000-00805f9b34fb';
+                                    window.hilink.notifyBLECharacteristicValueChange(v.deviceId,serviceId,characteristicId,'false');
+                                    window.hilink.onBLECharacteristicValueChange('onBLECharacteristicValueChangeResult');
+                                    window.onBLECharacteristicValueChangeResult = (res) =>{
+                                        console.log(res,'监听低功耗蓝牙设备的特征值变化')
+                                    };
+                                    window.hilink.writeBLECharacteristicValueIsDelayTime('0',v.deviceId,serviceId,characteristicId,'030101','writeBLECharacteristicValueIsDelayTimeResult');
+                                    window.writeBLECharacteristicValueIsDelayTimeResult = (res) =>{
+                                        console.log(res,'读取设备信息1')
+                                    }
+                                }
+                            }
+                            window.hilink.createBLEConnection(v.deviceId)
+                            
+                        }
+                    })
+                }else if(_sechaBle.localName == this.deviceId){
+                    // console.log('停止搜寻附近的蓝牙外围设备')
+                    window.hilink.stopBluetoothDevicesDiscovery();
+                    console.log(_sechaBle.deviceId,'ios')
+                    window.hilink.onBLEConnectionStateChange('onBLEConnectionStateChangeReq');
+                    window.onBLEConnectionStateChangeReq = (res) =>{
+                        console.log(res,'连接成功');
+                        window.hilink.onBLEServicesDiscovered('onBLEServicesDiscoveredResult');
+                        window.onBLEServicesDiscoveredResult = (res) =>{
+                            console.log(res,'服务查询完成');
+                            //通知低功耗蓝牙设备的特征值的值，通过onBLECharacteristicValueChange返回值
+                            window.hilink.notifyBLECharacteristicValueChange(_sechaBle.deviceId,'ffb0','ffb2','false');
+                            window.hilink.onBLECharacteristicValueChange('onBLECharacteristicValueChangeResult');
+                            window.onBLECharacteristicValueChangeResult = (res) =>{
+                                console.log(res,'监听低功耗蓝牙设备的特征值变化')
+                                let serviceId = 'ffb0';
+                                let characteristicId = 'ffb1';
+                                //对蓝牙设备写入data数据。
+                                window.hilink.writeBLECharacteristicValue(_sechaBle.deviceId,serviceId,characteristicId,'030101','writeBLECharacteristicValueResult');
+                                window.writeBLECharacteristicValueResult = (res) =>{
+                                    console.log(res,'读取设备信息1')
+                                }
+                            };
+                            
+                        }
+                        
+                    }
+                    window.hilink.createBLEConnection(_sechaBle.deviceId)
+                    
+                    
+                }
             }
         },
+        
         //搜索蓝牙
         sechaBle(){
             let service = [];
-            let allowDuplicatesKey = 'true';
+            let allowDuplicatesKey = 'false';
             let interval = '0';
             window.hilink.startBluetoothDevicesDiscovery(service,allowDuplicatesKey,interval);
             

@@ -12,7 +12,7 @@ export default {
 
 <style >
  .van-overflow-hidden{
-   overflow-y: scroll !important;
+   overflow-y: auto !important;
  }
 #app {
 
